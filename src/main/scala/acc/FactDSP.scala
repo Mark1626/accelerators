@@ -3,7 +3,7 @@ package accelerators.acc
 import chipsalliance.rocketchip.config.{Config, Field, Parameters}
 import chisel3._
 import chisel3.util._
-import accelerators.dsp.{TLReadQueue, TLWriteQueueWithLast}
+import accelerators.dsp.{TLReadQueue, TLWriteQueue}
 import dspblocks.{DspBlock, HasCSR, TLChain, TLDspBlock, TLHasCSR}
 import freechips.rocketchip.amba.axi4stream.{AXI4StreamIdentityNode, AXI4StreamMasterNode, AXI4StreamMasterParameters, AXI4StreamSlaveNode, AXI4StreamSlaveParameters}
 import freechips.rocketchip.diplomacy._
@@ -108,7 +108,7 @@ with TLDspBlock
 
 class TLStreamingFactChain[T<:Data:Ring](params: StreamingFactParams, proto: T)(implicit p: Parameters)
   extends TLChain(Seq(
-    TLWriteQueueWithLast(params.depth, AddressSet(params.writeAddress, 0xff))(_),
+    TLWriteQueue(params.depth, AddressSet(params.writeAddress, 0xff), considerLast = true)(_),
     { implicit p: Parameters => {
       val streamingFact = LazyModule(new TLStreamingFactBlock(proto))
       streamingFact
@@ -119,9 +119,9 @@ class TLStreamingFactChain[T<:Data:Ring](params: StreamingFactParams, proto: T)(
 trait CanHavePeripheryStreamingFact { this: BaseSubsystem =>
   val passthrough = p(StreamingFactKey) match {
     case Some(params) => {
-      val chain = LazyModule(new TLStreamingFactChain(params, UInt(32.W)))
-      pbus.toVariableWidthSlave(Some("streamingfact")) { chain.mem.get := TLFIFOFixer() }
-      Some(chain)
+      val factChain = LazyModule(new TLStreamingFactChain(params, UInt(32.W)))
+      pbus.toVariableWidthSlave(Some("streamingfact")) { factChain.mem.get := TLFIFOFixer() }
+      Some(factChain)
     }
     case None => None
   }

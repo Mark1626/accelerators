@@ -3,7 +3,7 @@ package accelerators.acc
 import chipsalliance.rocketchip.config.{Config, Field, Parameters}
 import chisel3._
 import chisel3.util._
-import accelerators.dsp.{TLReadQueue, TLWriteQueueWithLast}
+import accelerators.dsp.{TLReadQueue, TLWriteQueue}
 import dspblocks.{DspBlock, HasCSR, TLChain, TLDspBlock, TLHasCSR}
 import freechips.rocketchip.amba.axi4stream.{AXI4StreamIdentityNode, AXI4StreamMasterNode, AXI4StreamMasterParameters, AXI4StreamSlaveNode, AXI4StreamSlaveParameters}
 import freechips.rocketchip.diplomacy._
@@ -118,7 +118,7 @@ with TLDspBlock
 
 class TLStreamingGCDChain[T<:Data:Ring](params: StreamingGCDParams, proto: T)(implicit p: Parameters)
   extends TLChain(Seq(
-    TLWriteQueueWithLast(params.depth, AddressSet(params.writeAddress, 0xff))(_),
+    TLWriteQueue(params.depth, AddressSet(params.writeAddress, 0xff), considerLast=true)(_),
     { implicit p: Parameters => {
       val streamingGCD = LazyModule(new TLStreamingGCDBlock(proto))
       streamingGCD
@@ -129,9 +129,9 @@ class TLStreamingGCDChain[T<:Data:Ring](params: StreamingGCDParams, proto: T)(im
 trait CanHavePeripheryStreamingGCD { this: BaseSubsystem =>
   val passthrough = p(StreamingGCDKey) match {
     case Some(params) => {
-      val chain = LazyModule(new TLStreamingGCDChain(params, UInt(32.W)))
-      pbus.toVariableWidthSlave(Some("streaminggcd")) { chain.mem.get := TLFIFOFixer() }
-      Some(chain)
+      val gcdChain = LazyModule(new TLStreamingGCDChain(params, UInt(32.W)))
+      pbus.toVariableWidthSlave(Some("streaminggcd")) { gcdChain.mem.get := TLFIFOFixer() }
+      Some(gcdChain)
     }
     case None => None
   }
