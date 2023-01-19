@@ -3,6 +3,7 @@ package accelerators.acc
 import chipsalliance.rocketchip.config.{Config, Field, Parameters}
 import chisel3._
 import chisel3.util._
+import accelerators.dsp.{TLReadQueue, TLWriteQueueWithLast}
 import dspblocks.{DspBlock, HasCSR, TLChain, TLDspBlock, TLHasCSR}
 import freechips.rocketchip.amba.axi4stream.{AXI4StreamIdentityNode, AXI4StreamMasterNode, AXI4StreamMasterParameters, AXI4StreamSlaveNode, AXI4StreamSlaveParameters}
 import freechips.rocketchip.diplomacy._
@@ -61,8 +62,6 @@ class StreamingGCD[T<:Data:Ring](proto: T) extends Module {
   when(state === s_idle && io.in.valid) {
     gcd := io.in.bits(0).data
     tmp := io.in.bits(1).data
-    println(gcd)
-    println(tmp)
   }.elsewhen(state === s_run) {
     when(gcd > tmp) {
       gcd := gcd - tmp

@@ -1,4 +1,4 @@
-package accelerators.acc
+package accelerators.dsp
 
 import chipsalliance.rocketchip.config.Parameters
 import chisel3._

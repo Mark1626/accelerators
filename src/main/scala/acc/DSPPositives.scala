@@ -4,6 +4,7 @@ import chipsalliance.rocketchip.config.{Config, Field, Parameters}
 import chisel3._
 import chisel3.experimental.FixedPoint
 import chisel3.util._
+import accelerators.dsp.{TLReadQueue, TLWriteQueue}
 import dspblocks.{DspBlock, HasCSR, TLChain, TLDspBlock, TLHasCSR}
 import freechips.rocketchip.amba.axi4stream.{AXI4StreamIdentityNode, AXI4StreamMasterNode, AXI4StreamMasterParameters, AXI4StreamSlaveNode, AXI4StreamSlaveParameters}
 import freechips.rocketchip.diplomacy._
