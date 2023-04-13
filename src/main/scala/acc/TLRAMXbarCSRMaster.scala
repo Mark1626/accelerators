@@ -6,7 +6,7 @@ import freechips.rocketchip.config.{Config, Field, Parameters}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.regmapper.{RegField, RegisterRouter, RegisterRouterParams}
 import freechips.rocketchip.subsystem.BaseSubsystem
-import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink.{TLFragmenter, _}
 import testchipip.TLHelper
 
 case class TLRAMXbarCSRMasterConfig(
@@ -24,23 +24,10 @@ trait CanHaveTLRAMXbarCSRMaster { this: BaseSubsystem =>
       val tl = LazyModule(new TLRAMXbarCSRMaster(params.csrAddress, params.scratchpadAddress, pbus.beatBytes, pbus.blockBytes)(p))
       pbus.coupleTo(portName){
         tl.mem :=
-        //TLFragmenter(pbus.beatBytes, pbus.blockBytes, holdFirstDeny = true) :=
         _
       }
 
-      pbus.coupleFrom("tlmaster") {
-        _ :=
-        tl.tlMaster.tlNode
-      }
-
-//      pbus.coupleFrom("TLmaster") {
-//        _ :=
-//        TL4ToTL() :=
-//        TL4UserYanker() :=
-//        TL4Fragmenter() :=
-//        TL4IdIndexer(idBits=2) :=
-//        TL.TLMaster.TLNode
-//      }
+      pbus.fromPort(Some("tlmaster"))() := tl.tlSlave.tlMasterNode.tlNode
 
       Some(tl)
     }
@@ -72,102 +59,91 @@ class TLReadMaster(
     // Address of ram to read
     val req = IO(Flipped(Decoupled(UInt(64.W))))
     val resp = IO(Decoupled(UInt(64.W)))
-    val busy = IO(Output(Bool()))
+    val idle = IO(Output(Bool()))
 
     val rdata = RegInit(0.U)
     val respWait = RegInit(false.B)
 
     req.ready := mem.a.ready && !respWait
+    resp.valid := false.B
 
     // Handle incoming IO req
-    when (req.fire) {
-      reading := true.B
-    }
+//    when (req.fire) {
+//      reading := true.B
+//    }
 
     mem.a.valid := !reading && req.valid
     mem.a.bits := edge.Get(
-      fromSource = 1.U,
+      fromSource = 0.U,
       toAddress = req.bits,
       lgSize = log2Ceil(beatBytes).U)._2
 
     when (edge.done(mem.a)) {
       reading := true.B
-      respWait := true.B
     }
 
-    mem.d.ready := resp.ready
+    mem.d.ready := true.B
 
     when (mem.d.fire) {
-      resp.bits := mem.d.bits.data
-      resp.valid := true.B
-      respWait := false.B
+      rdata := mem.d.bits.data
+      respWait := true.B
       reading := false.B
     }
 
-    busy := !reading && !respWait
+    when (resp.ready && respWait) {
+      resp.valid := true.B
+      resp.bits := rdata
+      respWait := false.B
+    }
+
+    idle := !reading && !respWait
   }
 }
 
-//abstract class MMIOSlave(
-//                     csrAddress: AddressSet,
-//                     scratchpadAddress: AddressSet,
-//                     beatBytes: Int = 4
-//                   )(implicit p: Parameters) extends RegisterRouter(
-//  RegisterRouterParams(
-//    name = "tlmmio",
-//    compat = Seq("com", "tlmmio"),
-//    base = csrAddress.base,
-//    size = csrAddress.mask+1,
-//    beatBytes = beatBytes))
-//{
-//
-////  val TLMasterNode = LazyModule(new TLReadMaster(scratchpadAddress)(p))
-//
-//  lazy val module = new LazyModuleImp(this) { outer =>
-//
-////    val impl = TLMasterNode.module
-////
-////    val busy = Wire(Bool())
-////    val req = Wire(DecoupledIO(UInt(64.W)))
-////    val resp = Wire(DecoupledIO(UInt(64.W)))
-//
-//    val busy = IO(Input(Bool()))
+abstract class CSRMMIOSlave(
+                          csrAddress: AddressSet,
+                          scratchpadAddress: AddressSet,
+                          beatBytes: Int = 4
+                        )(implicit p: Parameters) extends RegisterRouter(
+  RegisterRouterParams(
+    name = "mmio",
+    compat = Seq("com", "mmio"),
+    base = csrAddress.base,
+    size = csrAddress.mask+1,
+    beatBytes = beatBytes))
+{
+
+  val tlMasterNode = LazyModule(new TLReadMaster(scratchpadAddress)(p))
+
+  lazy val module = new LazyModuleImp(this) { outer =>
+
+    val impl = tlMasterNode.module
+
+    val idle = Wire(Bool())
+    val req = Wire(DecoupledIO(UInt(64.W)))
+    val resp = Wire(DecoupledIO(UInt(64.W)))
+
+    impl.req <> req
+    impl.resp <> resp
+    idle := impl.idle
+
+//    val idle = IO(Input(Bool()))
 //    val req = IO(Flipped(Decoupled(UInt(64.W))))
 //    val resp = IO(Decoupled(UInt(64.W)))
-//
-//    regmap(
-//      beatBytes * 0 -> Seq(RegField.r(64, busy)),
-//      beatBytes * 1 -> Seq(RegField.w(64, req)),
-//      beatBytes * 2 -> Seq(RegField.r(64, resp))
-//    )
-//  }
-//}
+
+    regmap(
+      beatBytes * 0 -> Seq(RegField.r(64, idle)),
+      beatBytes * 1 -> Seq(RegField.w(64, req)),
+      beatBytes * 2 -> Seq(RegField.r(64, resp))
+    )
+  }
+}
 
 class TLMMIOSlave(
    csrAddress: AddressSet,
    scratchpadAdderss: AddressSet,
    beatBytes: Int = 4
- )(implicit p: Parameters) extends MMIOSlave(csrAddress, scratchpadAdderss, beatBytes) with HasTLControlRegMap
-
-class TLMMIONode(
- csrAddress: AddressSet,
- scratchpadAdderss: AddressSet,
- beatBytes: Int = 4
-)(implicit p: Parameters) extends LazyModule {
-
-  val node = TLIdentityNode()
-
-  val TLMasterNode = LazyModule(new TLReadMaster(scratchpadAdderss, beatBytes=beatBytes)(p))
-  val TLSlaveNode = LazyModule(new TLMMIOSlave(csrAddress, scratchpadAdderss, beatBytes)(p))
-
-//  node := TLMasterNode.TLNode
-  TLSlaveNode.node := node
-
-  lazy val module = new LazyModuleImp(this) { outer =>
-    TLMasterNode.module.req <> TLSlaveNode.module.req
-    TLMasterNode.module.resp <> TLSlaveNode.module.resp
-  }
-}
+ )(implicit p: Parameters) extends CSRMMIOSlave(csrAddress, scratchpadAdderss, beatBytes) with HasTLControlRegMap
 
 class TLRAMXbarCSRMaster(val csrAddress: AddressSet,
   val scratchpadAddress: AddressSet,
@@ -179,7 +155,7 @@ class TLRAMXbarCSRMaster(val csrAddress: AddressSet,
   val mem = TLIdentityNode()
 
   val tlSlave = LazyModule(new TLMMIOSlave(csrAddress, scratchpadAddress, beatBytes))
-  val tlMaster = LazyModule(new TLReadMaster(scratchpadAddress))
+//  val tlMaster = LazyModule(new TLReadMaster(scratchpadAddress))
 
   val ram = TLRAM(
     address = scratchpadAddress,
@@ -190,17 +166,11 @@ class TLRAMXbarCSRMaster(val csrAddress: AddressSet,
   val ramXbar = TLXbar()
   val topXbar = TLXbar()
 
-  ram := topXbar
+  ram := TLFragmenter(beatBytes, beatBytes * beatBytes) := TLBuffer() := topXbar
+  tlSlave.node := TLFragmenter(beatBytes, beatBytes * beatBytes) := TLBuffer() := topXbar
 
-  tlSlave.node := topXbar
-  topXbar := TLFragmenter(beatBytes, blockBytes, holdFirstDeny = true) := mem
-//  topXbar := tlMaster.tlNode
+  topXbar := mem
 
   lazy val module = new LazyModuleImp(this) {
-    tlMaster.module.req <> tlSlave.module.req
-    tlMaster.module.resp <> tlSlave.module.resp
-    tlSlave.module.busy := tlMaster.module.busy
-//    TLMaster.module.req <> DontCare
-//    TLMaster.module.resp <> DontCare
   }
 }

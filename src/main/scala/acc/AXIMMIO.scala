@@ -41,7 +41,7 @@ class WithAXIMMIO(csrAddress: AddressSet) extends Config((site, here, up) => {
 
 abstract class MMIO(
   csrAddress: AddressSet,
-  beatBytes: Int = 4
+  beatBytes: Int = 4,
 )(implicit p: Parameters) extends RegisterRouter(
   RegisterRouterParams(
     name = "aximmio",

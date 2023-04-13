@@ -6,15 +6,14 @@ int main() {
     int64_t *ptr = SCRATCHPAD_ADDR;
     int64_t data = 10LL;
 
-    for (int i=0; i < 10; i++) {
-        ptr[i] = data + i;
-    }
+    int64_t *csr = CSR_ADDR;
+    printf("CSR %ld\n", csr[0]);
 
-    int64_t csr = reg_read64(CSR_ADDR)
-    printf("CSR %ld\n", csr);
+    ptr[0] = 10;
+    printf("Val1: %ld\n", ptr[0]);
 
-    for (int i=0; i < 10; i++) {
-        int64_t val = ptr[i];
-        printf("Val: %ld\n", val);
-    }
+    csr[1] = SCRATCHPAD_ADDR;
+
+    printf("Val2: %ld\n", csr[2]);
+
 }
